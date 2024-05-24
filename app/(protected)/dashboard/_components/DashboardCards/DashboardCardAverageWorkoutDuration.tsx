@@ -36,7 +36,10 @@ export default async function DashboardCardAverageWorkoutDuration() {
       title="Avg Workout Time"
       icon={<IconHourglass className="text-danger" />}
     >
-      {averageDuration}
+      <div className="flex gap-3 items-end">
+        <span>{averageDuration}</span>
+        <p className="text-[16px] mb-[-5px] text-zinc-400">minute/s</p>
+      </div>
     </DashboardCardTemplate>
   );
 }

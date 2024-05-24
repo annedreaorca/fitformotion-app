@@ -35,7 +35,7 @@ export default function AboutTab({ exercise }: { exercise: Exercise | null }) {
       <div className="overflow-hidden mb-3 relative" ref={emblaRef}>
         <div className="flex">
           <div className="shrink-0 grow-0 basis-full min-w-0">
-            <img
+            <Image
               src={`/images/exercises/${formatExerciseNameForImage(exercise.name)}/images/0.gif`}
               width={750}
               height={500}

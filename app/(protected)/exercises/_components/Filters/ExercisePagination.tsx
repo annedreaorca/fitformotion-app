@@ -21,9 +21,10 @@ export default function ExercisePagination({
   };
 
   const totalPages = Math.ceil(numberOfResults / perPage);
+  const endItem = Math.min(currentPage * perPage, numberOfResults);
 
   return (
-    <div className="flex justify-center">
+    <div className="flex flex-col items-center relative w-full">
       <Pagination
         showControls
         isCompact
@@ -32,6 +33,11 @@ export default function ExercisePagination({
         initialPage={1}
         onChange={createPageURL}
       />
+      <div className="absolute bottom-0 right-0 mb-4">
+        <span>
+          {endItem} out of {numberOfResults}
+        </span>
+      </div>
     </div>
   );
 }
