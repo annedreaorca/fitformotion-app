@@ -14,15 +14,18 @@ nav [data-active="true"] a {
   color: #b91037;
 }
 
-.dark path.recharts-rectangle{
+.dark path.recharts-rectangle {
   fill: #b91037;
 }
 
-.dark path.recharts-curve.recharts-area-area
-{
+.dark path.recharts-curve.recharts-area-area {
   fill: #b91037;
 }
 
-.dark path.recharts-curve.recharts-line-curve{
+.dark path.recharts-curve.recharts-line-curve {
   stroke: #b91037;
+}
+
+[data-sonner-toast][data-styled="true"] {
+  background: #991b1b !important;
 }

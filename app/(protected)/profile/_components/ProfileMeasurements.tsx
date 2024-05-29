@@ -13,6 +13,13 @@ interface UserMeasurements {
   age?: number | null;
 }
 
+const getBMIClassification = (bmi: number) => {
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 24.9) return "Normal weight";
+  if (bmi < 29.9) return "Overweight";
+  return "Obese";
+};
+
 export default function ProfileMeasurements({
   userMeasurements,
 }: {
@@ -43,6 +50,10 @@ export default function ProfileMeasurements({
     setIsLoading(false);
   };
 
+  const heightInMeters = Number(height) / 100;
+  const bmi = Number(weight) / heightInMeters ** 2;
+  const bmiClassification = getBMIClassification(bmi);
+
   return (
     <Card shadow="none" className="shadow-md">
       <CardHeader className="text-xl font-semibold px-5 pb-0 gap-x-3  items-center">
@@ -69,10 +80,10 @@ export default function ProfileMeasurements({
         />
 
         <Input
-          type="number"
+          type="text"
           label="BMI"
           size="sm"
-          value={(Number(weight) / (Number(height) / 100) ** 2).toFixed(2)}
+          value={`${bmi.toFixed(2)} (${bmiClassification})`}
           isDisabled
         />
 

@@ -41,16 +41,19 @@ export const WorkoutControlsProvider = ({
   const [activeWorkoutRoutine, setActiveWorkoutRoutine] = useState<
     string | null
   >(null);
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
+  const [totalPausedDuration, setTotalPausedDuration] = useState<number>(0);
 
   const intervalRef = useRef<number | null>(null);
+  const [pausedTime, setPausedTime] = useState(0);
 
   useEffect(() => {
     const handleWorkoutTimer = () => {
       if (workoutStartTime && !isPaused) {
         const currentTime = Date.now();
-        const elapsedSeconds = Math.floor(
-          (currentTime - workoutStartTime) / 1000,
-        );
+        const elapsedMilliseconds =
+          currentTime - workoutStartTime - totalPausedDuration;
+        const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
         setWorkoutDuration(elapsedSeconds);
       }
     };
@@ -66,7 +69,7 @@ export const WorkoutControlsProvider = ({
         clearInterval(intervalRef.current);
       }
     };
-  }, [workoutStartTime, isPaused]);
+  }, [workoutStartTime, isPaused, totalPausedDuration]);
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -77,17 +80,30 @@ export const WorkoutControlsProvider = ({
 
   const togglePause = () => {
     if (!workoutStartTime) {
-      toast.success("Workout Session Started from pause!");
-    } else {
-      setIsPaused((prevIsPaused) => !prevIsPaused);
-      toast.success(isPaused ? "Workout Resumed!" : "Workout Paused!");
+      toast.error("Workout has not started yet");
+      return;
     }
+
+    if (isPaused) {
+      // Resume the workout
+      const pauseEndTime = Date.now();
+      const pauseDuration = pauseEndTime - pauseStartTime!;
+      setPausedTime((prevPausedTime) => prevPausedTime + pauseDuration);
+      setPauseStartTime(null);
+    } else {
+      // Pause the workout
+      setPauseStartTime(Date.now());
+    }
+
+    setIsPaused((prevIsPaused) => !prevIsPaused);
   };
 
   const startWorkout = (workoutId: string) => {
     if (!workoutStartTime) {
       setWorkoutStartTime(Date.now());
       setActiveWorkoutRoutine(workoutId);
+      setTotalPausedDuration(0);
+      setPauseStartTime(null);
       toast.success("Workout Session Started!");
     }
   };

@@ -43,6 +43,8 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
   const workoutPlanId = workout.id;
 
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [pausedTime, setPausedTime] = useState(0); // State to track the total paused duration
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null); // State to track the time when the workout is paused
 
   const { startConfetti } = useConfetti();
   const { workoutExercises, setWorkoutExercises } = useWorkoutData();
@@ -55,15 +57,11 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     activeWorkoutRoutine,
     setActiveWorkoutRoutine,
     startWorkout,
+    isPaused,
+    togglePause,
   } = useWorkoutControls();
 
-  const [isResting, setIsResting] = useState(false);
-  const [restTime, setRestTime] = useState(0);
-  const [remainingRestTime, setRemainingRestTime] = useState(0);
-  const [setCompletionTimes, setSetCompletionTimes] = useState<{
-    [key: string]: number;
-  }>({});
-
+  // Populate our empty context state with the exercise data.
   useEffect(() => {
     if (!isDataLoaded && !activeWorkoutRoutine && workout) {
       const initialWorkoutExercises = workout.WorkoutPlanExercise.map(
@@ -84,70 +82,27 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     }
   }, [workout, activeWorkoutRoutine, setWorkoutExercises, isDataLoaded]);
 
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isResting && remainingRestTime > 0) {
-      timer = setInterval(() => {
-        setRemainingRestTime((prev) => prev - 1);
-      }, 1000);
-    } else if (isResting && remainingRestTime === 0) {
-      setIsResting(false);
-      toast.success("Rest period over. Time to continue your workout!");
-    }
-    return () => clearInterval(timer);
-  }, [isResting, remainingRestTime]);
-
-  const startRestPeriod = (seconds: number) => {
-    setRestTime(seconds);
-    setRemainingRestTime(seconds);
-    setIsResting(true);
-  };
-
-  const skipRestPeriod = () => {
-    setIsResting(false);
-    setRemainingRestTime(0);
-    toast.success("Rest period skipped. Continue your workout!");
-  };
-
   const handleCompleteSet = (
     exerciseIndex: number,
     setIndex: number,
     exerciseName: string,
+    isSelected: boolean,
   ) => {
     if (!workoutExercises) {
       toast.error("Workout exercises data is not loaded yet");
       return;
     }
 
+    // Check if the workout is paused
+    if (isPaused) {
+      toast.error("You cannot complete a set while the workout is paused");
+      return;
+    }
+
     const exerciseDetail = workoutExercises[exerciseIndex];
     const set = exerciseDetail.sets[setIndex];
 
-    if (set.completed) {
-      toast.error("This set is already completed and cannot be unchecked.");
-      return;
-    }
-
-    const currentTime = Date.now();
-    const minTimePerRep = 2; // Assuming 2 seconds per rep
-    const minDuration =
-      exerciseDetail.trackingType === "duration"
-        ? (set.duration ?? 0) * 1000
-        : (set.reps || 0) * minTimePerRep * 1000;
-
-    const previousSetCompletionTime =
-      setCompletionTimes[`${exerciseIndex}-${setIndex - 1}`] ||
-      workoutStartTime ||
-      0;
-    const requiredTimeElapsed =
-      previousSetCompletionTime + minDuration + restTime * 1000;
-
-    if (currentTime < requiredTimeElapsed) {
-      toast.error(
-        "Please complete the required exercise duration or repetitions first.",
-      );
-      return;
-    }
-
+    // Validation logic for weight, reps, and duration
     if (
       set.weight === null ||
       !Number(set.weight) ||
@@ -162,27 +117,55 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
       return;
     }
 
-    if (!workoutStartTime) {
-      startWorkout(workoutPlanId);
-      setWorkoutStartTime(Date.now());
+    // Calculate total required duration including paused time
+    let totalRequiredDuration = 0;
+    for (let i = 0; i <= exerciseIndex; i++) {
+      const currentExercise = workoutExercises[i];
+      for (
+        let j = 0;
+        j < (i === exerciseIndex ? setIndex + 1 : currentExercise.sets.length);
+        j++
+      ) {
+        const currentSet = currentExercise.sets[j];
+        if (currentExercise.trackingType === "duration") {
+          totalRequiredDuration += currentSet.duration || 0;
+        } else if (currentExercise.trackingType === "reps") {
+          totalRequiredDuration += (currentSet.reps || 0) * 2; // Assuming 2 seconds per rep
+        }
+      }
     }
 
+    // Get current workout duration including paused time
+    if (!workoutStartTime) {
+      return;
+    }
+    const currentWorkoutDuration =
+      (Date.now() - workoutStartTime - pausedTime) / 1000;
+
+    // Validate for cumulative duration
+    if (currentWorkoutDuration < totalRequiredDuration) {
+      toast.error(`Please complete the workout.`);
+      return;
+    }
+
+    if (!workoutStartTime) {
+      startWorkout(workoutPlanId);
+    }
     setWorkoutExercises((prevWorkoutExercises) => {
       if (!prevWorkoutExercises) return prevWorkoutExercises;
       const updatedWorkoutExercises = [...prevWorkoutExercises];
       const exerciseToUpdate = { ...updatedWorkoutExercises[exerciseIndex] };
       const setToUpdate = { ...exerciseToUpdate.sets[setIndex] };
-      setToUpdate.completed = true;
+      setToUpdate.completed = isSelected;
       exerciseToUpdate.sets[setIndex] = setToUpdate;
       updatedWorkoutExercises[exerciseIndex] = exerciseToUpdate;
-      toast.success(`${exerciseName} Set ${setIndex + 1} completed`);
+      if (setToUpdate.completed) {
+        toast.success(`${exerciseName} Set ${setIndex + 1} completed`);
+      } else {
+        toast(`${exerciseName} Set ${setIndex + 1} marked as incomplete`);
+      }
       return updatedWorkoutExercises;
     });
-
-    setSetCompletionTimes((prevTimes) => ({
-      ...prevTimes,
-      [`${exerciseIndex}-${setIndex}`]: currentTime,
-    }));
   };
 
   const handleWeightChange = (
@@ -203,6 +186,7 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     });
   };
 
+  // Handle changing reps for a set
   const handleRepChange = (
     exerciseIndex: number,
     setIndex: number,
@@ -221,6 +205,7 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     });
   };
 
+  // Handle changing exerciseDuration for a set
   const handleDurationChange = (
     exerciseIndex: number,
     setIndex: number,
@@ -239,6 +224,7 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     });
   };
 
+  // Add Sets to exercise
   const addSet = (exerciseIndex: number, exerciseName: string) => {
     setWorkoutExercises((prevWorkoutExercises) => {
       if (!prevWorkoutExercises) return prevWorkoutExercises;
@@ -251,13 +237,14 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
           workout.WorkoutPlanExercise[exerciseIndex].exerciseDuration || null,
         weight: null,
       };
-      exerciseToUpdate.sets = [...exerciseToUpdate.sets, newSet];
+      exerciseToUpdate.sets.push(newSet);
       updatedWorkoutExercises[exerciseIndex] = exerciseToUpdate;
       toast.success(`Set added to ${exerciseName}`);
       return updatedWorkoutExercises;
     });
   };
 
+  // Remove Sets from exercise
   const removeSet = (exerciseIndex: number, exerciseName: string) => {
     setWorkoutExercises((prevWorkoutExercises) => {
       if (!prevWorkoutExercises) return prevWorkoutExercises;
@@ -285,10 +272,11 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     });
   };
 
+  // Cancel workout and reset states
   const cancelWorkout = () => {
     if (
       window.confirm(
-        "Are you sure you want to cancel the workout? This cannot be undone.",
+        "Are you sure you want to cancel the workout? No data will be saved.",
       )
     ) {
       setWorkoutExercises([]);
@@ -375,8 +363,26 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
     }
   };
 
+  // Pause the workout
+  const pauseWorkout = () => {
+    togglePause();
+    setPauseStartTime(Date.now());
+  };
+
+  // Resume the workout
+  const resumeWorkout = () => {
+    togglePause();
+    if (pauseStartTime) {
+      setPausedTime(
+        (prevPausedTime) => prevPausedTime + (Date.now() - pauseStartTime),
+      );
+    }
+    setPauseStartTime(null);
+  };
+
   const workoutName = workout.name;
 
+  // Completion Percentage Calculator
   const totalSets = workoutExercises
     ? workoutExercises.reduce((acc, curr) => acc + curr.sets.length, 0)
     : 0;
@@ -435,78 +441,7 @@ export default function WorkoutManager({ workout }: { workout: Workout }) {
             </CardFooter>
           </Card>
         ))}
-        <div className="hidden max-md:block">
-          <div className="py-[80px]"> </div>
-        </div>
       </div>
-      <div className="separator mt-[40px] max-md:hidden">
-        <hr className="opacity-10" />
-      </div>
-      <div className="flex max-md:flex-col justify-center mt-10 max-md:mt-0 max-md:fixed max-md:bottom-0 max-md:mb-[130px]  z-40 ">
-        {" "}
-        {/* changes on className */}
-        <div className="flex items-center justify-center gap-2 bg-zinc-700 p-[15px] rounded-[10px]">
-          {/* changes on className */}
-          <div className="relative">
-            <input
-              type="number"
-              value={restTime}
-              onChange={(e) => setRestTime(Number(e.target.value))}
-              disabled={!workoutStartTime}
-              className="border rounded px-2 py-1 pr-16 bg-zinc-900 text-white focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-opacity-50"
-              placeholder="Enter rest time"
-            />
-            {/* changes on className */}
-            <span className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500">
-              second{"/s"}
-            </span>
-          </div>
-          <Button
-            size="sm"
-            className="bg-zinc-100 text-zinc-900"
-            onPress={() => startRestPeriod(restTime)}
-            disabled={!workoutStartTime}
-          >
-            Start Rest
-          </Button>
-        </div>
-        {/* add this from this */}
-        <div className="flex hidden max-md:block items-center justify-center gap-2 max-md:bg-zinc-700 p-[5px] rounded-[10px] my-[15px]">
-          {isResting && (
-            <div className="flex justify-center items-center">
-              <p className="max-md:text-sm max-md:text-zinc-200 mr-4">
-                Resting... {remainingRestTime}s remaining
-              </p>
-              <Button
-                size="md"
-                className="bg-slate-100 text-zinc-900"
-                onPress={skipRestPeriod}
-              >
-                Skip Rest
-              </Button>
-            </div>
-          )}
-        </div>
-        {/* to this */}
-      </div>
-
-      {isResting && (
-        <div className="flex justify-center items-center max-md:hidden mt-5">
-          {/* changes on className */}
-          <p className="max-md:text-sm max-md:text-zinc-200 mr-4">
-            {/* changes on className */}
-            Resting... {remainingRestTime}s remaining
-          </p>
-          <Button
-            size="md"
-            className="bg-slate-100 text-zinc-900"
-            onPress={skipRestPeriod}
-          >
-            {/* changes on className */}
-            Skip Rest
-          </Button>
-        </div>
-      )}
       <StatusBar
         completeWorkout={completeWorkout}
         progressPercentage={progressPercentage}
